@@ -71,6 +71,7 @@ from integrations.spotify_integration import SpotifyIntegration
 from integrations.github_integration import GitHubIntegration
 from integrations.google_integration import GoogleIntegration
 from integrations.vscode_context import VSCodeContext
+from remote.tunnel import RemoteTunnel
 
 logger = get_logger(__name__)
 
@@ -202,6 +203,25 @@ class VoiceProgrammer:
         dashboard_port = self._cfg.get("ui", "dashboard_port", default=7432)
         self._dashboard.start(port=dashboard_port)
 
+        # Callback para envio de texto via dashboard/mobile
+        def _text_from_dashboard(text: str):
+            if self._transcriber is None:
+                return
+            # Simula pipeline como se fosse voz
+            self._dashboard.add_conversation("user", text)
+            if self._claude_capture_enabled and self._claude:
+                self._handle_claude_streaming(text)
+
+        self._dashboard.set_text_callback(_text_from_dashboard)
+
+        # Túnel remoto (ngrok) — opcional
+        ngrok_token = os.environ.get("NGROK_TOKEN", "")
+        if self._cfg.get("remote", "tunnel_enabled", default=False) or ngrok_token:
+            self._tunnel = RemoteTunnel(port=dashboard_port, auth_token=ngrok_token)
+            threading.Thread(target=self._tunnel.start, daemon=True, name="ngrok").start()
+        else:
+            self._tunnel = None
+
         # Monitor proativo de erros
         self._proactive.start(on_alert=self._on_proactive_alert)
 
@@ -277,6 +297,7 @@ class VoiceProgrammer:
             language=result.language,
         )
         logger.info("[VOZ] %r", text)
+        self._dashboard.add_conversation("user", text)
 
         # Salva na memória da sessão
         if self._memory:
@@ -478,11 +499,16 @@ class VoiceProgrammer:
 
             t_tts_start = [None]
 
+            full_response: list[str] = []
+
             def on_sentence(sentence: str) -> None:
                 if t_tts_start[0] is None:
                     t_tts_start[0] = time.monotonic()
                     logger.info("[LATÊNCIA] Primeira frase TTS: %.2fs", t_tts_start[0] - t_start)
+                full_response.append(sentence)
                 print(f"  [Jarvis] {sentence}")
+                # Atualiza dashboard em tempo real
+                self._dashboard.add_conversation("jarvis", sentence, model=self._state.get("model", "") if hasattr(self, "_state") else "")
 
             if self._tts_enabled and self._tts_engine and self._tts_engine.is_available():
                 pipeline = StreamingTTSPipeline(self._tts_engine, self._audio_player)
