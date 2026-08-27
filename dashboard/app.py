@@ -122,6 +122,8 @@ class DashboardServer:
             def do_GET(self):
                 path = urlparse(self.path).path
                 if path == "/":
+                    self._serve_html(dashboard._render_viz())
+                elif path == "/dashboard":
                     self._serve_html(dashboard._render_dashboard())
                 elif path == "/mobile":
                     self._serve_html(dashboard._render_mobile())
@@ -183,6 +185,122 @@ class DashboardServer:
         return Handler
 
     # ── HTML Templates ──────────────────────────────────────────────────────────
+
+    def _render_viz(self) -> str:
+        """Visualização neural de partículas — interface principal do Jarvis."""
+        return """<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>J.A.R.V.I.S</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;600&display=swap">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:100%; height:100%; overflow:hidden; background:#030810; }
+  canvas { display:block; position:fixed; inset:0; }
+  #ui { position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; pointer-events:none; }
+  #sphere-space { flex:1; }
+  #status-area { display:flex; flex-direction:column; align-items:center; gap:10px; padding-bottom:60px; }
+  #status-text { font-family:'Chakra Petch',sans-serif; font-size:clamp(12px,1.4vw,18px); font-weight:600; letter-spacing:.32em; text-transform:uppercase; color:#00d4a0; text-shadow:0 0 16px rgba(0,212,160,.7),0 0 40px rgba(0,212,160,.3); transition:color .4s,text-shadow .4s; min-height:1.4em; }
+  #status-text.recording { color:#ff5555; text-shadow:0 0 16px rgba(255,50,50,.7),0 0 40px rgba(255,50,50,.3); }
+  #status-text.processing { color:#ffaa00; text-shadow:0 0 16px rgba(255,170,0,.7),0 0 40px rgba(255,170,0,.3); }
+  #wake-hint { font-family:'Chakra Petch',sans-serif; font-size:clamp(10px,.9vw,13px); font-weight:300; letter-spacing:.18em; color:rgba(138,184,204,.3); }
+  #wake-hint b { color:rgba(0,212,160,.6); font-weight:600; }
+  .corner-hud { position:fixed; font-family:'Chakra Petch',sans-serif; font-size:10px; letter-spacing:.16em; color:rgba(0,212,160,.25); pointer-events:none; }
+  #hud-tl { top:20px; left:24px; } #hud-tr { top:20px; right:24px; text-align:right; } #hud-bl { bottom:20px; left:24px; }
+  .hud-line { line-height:1.8; } .hud-val { color:rgba(0,212,160,.5); }
+  .bracket { position:fixed; width:20px; height:20px; opacity:.25; pointer-events:none; }
+  .b-tl { top:10px; left:10px; border-top:1px solid #00d4a0; border-left:1px solid #00d4a0; }
+  .b-tr { top:10px; right:10px; border-top:1px solid #00d4a0; border-right:1px solid #00d4a0; }
+  .b-bl { bottom:10px; left:10px; border-bottom:1px solid #00d4a0; border-left:1px solid #00d4a0; }
+  .b-br { bottom:10px; right:10px; border-bottom:1px solid #00d4a0; border-right:1px solid #00d4a0; }
+  #nav { position:fixed; bottom:20px; right:24px; display:flex; gap:8px; pointer-events:all; }
+  .nav-btn { background:transparent; border:1px solid rgba(0,212,160,.3); color:rgba(0,212,160,.5); padding:6px 14px; font-family:'Chakra Petch',sans-serif; font-size:10px; letter-spacing:.14em; cursor:pointer; border-radius:2px; transition:all .2s; }
+  .nav-btn:hover { border-color:rgba(0,212,160,.7); color:#00d4a0; background:rgba(0,212,160,.06); }
+  #mic-btn { width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:16px; }
+  #mic-btn.muted { border-color:rgba(255,80,80,.4); color:rgba(255,80,80,.5); }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="sphere-space"></div>
+  <div id="status-area">
+    <div id="status-text">AGUARDANDO</div>
+    <div id="wake-hint">Pressione <b>CTRL_R</b> e fale &nbsp;·&nbsp; Segure <b>ESPAÇO</b> para testar</div>
+  </div>
+</div>
+<div class="corner-hud" id="hud-tl">
+  <div class="hud-line">J.A.R.V.I.S <span class="hud-val">v3.0</span></div>
+  <div class="hud-line">VICTOR GERMANO</div>
+</div>
+<div class="corner-hud" id="hud-tr">
+  <div class="hud-line">MODELO <span class="hud-val" id="h-model">—</span></div>
+  <div class="hud-line">UPTIME <span class="hud-val" id="h-uptime">—</span></div>
+</div>
+<div class="corner-hud" id="hud-bl">
+  <div class="hud-line">INTERAÇÕES <span class="hud-val" id="h-int">0</span></div>
+</div>
+<div class="bracket b-tl"></div><div class="bracket b-tr"></div>
+<div class="bracket b-bl"></div><div class="bracket b-br"></div>
+<div id="nav">
+  <button class="nav-btn" id="mic-btn" title="Microfone">🎙</button>
+  <button class="nav-btn" onclick="location.href='/dashboard'">HUD</button>
+  <button class="nav-btn" onclick="location.href='/mobile'">MOBILE</button>
+</div>
+<script>
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+let W,H,CX,CY,R;
+function resize(){W=canvas.width=innerWidth;H=canvas.height=innerHeight;CX=W/2;CY=H/2;R=Math.min(W,H)*.32;}
+resize();window.addEventListener('resize',resize);
+const N=680,PHI=Math.PI*(3-Math.sqrt(5)),particles=[],connections=[];
+for(let i=0;i<N;i++){const y=1-(i/(N-1))*2,r=Math.sqrt(Math.max(0,1-y*y)),th=PHI*i,sc=0.92+Math.random()*.16;particles.push({bx:Math.cos(th)*r*sc,by:y*sc,bz:Math.sin(th)*r*sc,x:0,y:0,z:0,phase:Math.random()*Math.PI*2,size:.8+Math.random()*1.6,speed:.7+Math.random()*.6});}
+const CD=0.36;for(let i=0;i<N;i++){const pi=particles[i];for(let j=i+1;j<N;j++){const pj=particles[j],dx=pi.bx-pj.bx,dy=pi.by-pj.by,dz=pi.bz-pj.bz,d2=dx*dx+dy*dy+dz*dz;if(d2<CD*CD)connections.push({i,j,d:Math.sqrt(d2)});}}
+let analyser=null,dataArr=null,micActive=false,micMuted=false;
+async function initMic(){try{const s=await navigator.mediaDevices.getUserMedia({audio:true,video:false}),ac=new AudioContext(),src=ac.createMediaStreamSource(s);analyser=ac.createAnalyser();analyser.fftSize=256;analyser.smoothingTimeConstant=.75;src.connect(analyser);dataArr=new Uint8Array(analyser.frequencyBinCount);micActive=true;}catch(e){}}
+function getAudioLevel(){if(!analyser||!micActive||micMuted)return 0;analyser.getByteFrequencyData(dataArr);let s=0;for(let i=0;i<dataArr.length;i++)s+=dataArr[i];return s/(dataArr.length*255);}
+document.getElementById('mic-btn').addEventListener('click',()=>{if(!micActive)initMic();else{micMuted=!micMuted;const b=document.getElementById('mic-btn');b.classList.toggle('muted',micMuted);b.innerHTML=micMuted?'🔇':'🎙';}});
+initMic();
+let status='idle',rotY=0,rotX=0,t=0,simPhase=0,smoothAudio=0,prevTime=performance.now();
+function rotY3(x,z,a){const c=Math.cos(a),s=Math.sin(a);return[x*c+z*s,-x*s+z*c];}
+function rotX3(y,z,a){const c=Math.cos(a),s=Math.sin(a);return[y*c-z*s,y*s+z*c];}
+const FOV=3.2;
+function proj(x,y,z){const iz=1/(z+FOV);return{sx:CX+x*iz*R*FOV,sy:CY+y*iz*R*FOV,scale:iz*FOV,depth:(z+1)/2};}
+function frame(now){
+  requestAnimationFrame(frame);
+  const dt=Math.min(now-prevTime,32)/16.67;prevTime=now;t+=dt;
+  const raw=getAudioLevel();simPhase+=.018*dt;
+  const sim=.08+.06*Math.sin(simPhase);
+  const target=micActive&&!micMuted?raw:sim;
+  smoothAudio+=(target-smoothAudio)*.12;const al=smoothAudio;
+  const rs=status==='processing'?.006:.002;rotY+=rs*dt*(1+al*2);rotX=Math.sin(t*.008)*.18;
+  ctx.fillStyle='rgba(3,8,16,.18)';ctx.fillRect(0,0,W,H);
+  const projected=particles.map((p)=>{
+    let{bx,by,bz,phase,speed}=p;
+    const disp=status==='recording'?1+al*1.2*(.6+.4*Math.sin(phase+t*.05*speed)):status==='processing'?1+.08*Math.sin(t*.04*speed+phase):1+al*.3*Math.sin(phase+t*.02);
+    let x=bx*disp,y=by*disp,z=bz*disp;
+    if(status==='recording'&&al>.1){const tu=al*.15;x+=Math.sin(phase*3.7+t*.03*speed)*tu;y+=Math.cos(phase*2.3+t*.025*speed)*tu;z+=Math.sin(phase*1.9+t*.035*speed)*tu;}
+    const[rx,rz1]=rotY3(x,z,rotY);const[ry,rz2]=rotX3(y,rz1,rotX);return proj(rx,ry,rz2);
+  });
+  const bc=status==='recording'?[255,100,100]:status==='processing'?[255,180,60]:[160,220,255];
+  const gc=status==='recording'?[255,80,80]:status==='processing'?[255,160,40]:[80,180,255];
+  for(const{i,j,d}of connections){const pi=projected[i],pj=projected[j];if(particles[i].z<-.7&&particles[j].z<-.7)continue;const ba=(1-d/CD)*.18,ab=al*.4,df=(pi.depth+pj.depth)*.5,alpha=(ba+ab*ba*3)*(.2+df*.8);if(alpha<.005)continue;ctx.beginPath();ctx.moveTo(pi.sx,pi.sy);ctx.lineTo(pj.sx,pj.sy);ctx.strokeStyle=`rgba(${gc[0]},${gc[1]},${gc[2]},${Math.min(alpha,.6)})`;ctx.lineWidth=.4+df*.4;ctx.stroke();}
+  const order=projected.map((p,i)=>({p,i})).sort((a,b)=>a.p.depth-b.p.depth);
+  for(const{p,i}of order){const part=particles[i],da=.25+p.depth*.75,ag=al*1.2,sz=part.size*p.scale*R*(1+al*.6);if(sz<.2)continue;if(p.depth>.4){const grd=ctx.createRadialGradient(p.sx,p.sy,0,p.sx,p.sy,sz*3.5);grd.addColorStop(0,`rgba(${gc[0]},${gc[1]},${gc[2]},${da*.12*(1+ag)})`);grd.addColorStop(1,'rgba(0,0,0,0)');ctx.beginPath();ctx.arc(p.sx,p.sy,sz*3.5,0,Math.PI*2);ctx.fillStyle=grd;ctx.fill();}ctx.beginPath();ctx.arc(p.sx,p.sy,Math.max(sz,.3),0,Math.PI*2);ctx.fillStyle=`rgba(${Math.min(255,bc[0]+ag*40)},${bc[1]},${bc[2]},${da})`;ctx.fill();}
+  if(al>.35&&status==='recording'){ctx.save();ctx.globalCompositeOperation='screen';ctx.globalAlpha=(al-.35)*.4;ctx.fillStyle='rgba(0,120,255,0.15)';ctx.fillRect(0,0,W,H);ctx.restore();}
+}
+requestAnimationFrame(frame);
+const STATUS_LABEL={idle:'AGUARDANDO',recording:'OUVINDO...',processing:'PROCESSANDO...',error:'ERRO'};
+async function poll(){try{const r=await fetch('/api/status',{signal:AbortSignal.timeout(1200)}),d=await r.json();setStatus(d.status||'idle');const m=document.getElementById('h-model');if(m)m.textContent=d.model||'—';const u=document.getElementById('h-uptime');if(u)u.textContent=d.uptime||'—';const it=document.getElementById('h-int');if(it)it.textContent=d.interactions_today??'—';}catch{}}
+function setStatus(s){status=s;const el=document.getElementById('status-text');el.textContent=STATUS_LABEL[s]||s.toUpperCase();el.className=s;}
+poll();setInterval(poll,600);
+let dr=false;
+window.addEventListener('keydown',e=>{if(e.code==='Space'&&!e.target.matches('input,textarea')){e.preventDefault();if(!dr){dr=true;setStatus('recording');}}});
+window.addEventListener('keyup',e=>{if(e.code==='Space'){dr=false;setStatus('idle');}});
+</script>
+</body>
+</html>"""
 
     def _render_dashboard(self) -> str:
         state = self.get_state()
