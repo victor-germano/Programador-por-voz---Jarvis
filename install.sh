@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Instalador do Programador por Voz
-# Uso: curl -fsSL https://raw.githubusercontent.com/vgermano1711/programador_por_voz/claude/voice-command-system-w3g3wa/install.sh | bash
+# Uso: curl -fsSL https://raw.githubusercontent.com/victor-germano/Programador-por-voz---Jarvis/main/install.sh | bash
 
 set -e
 
-REPO="https://github.com/vgermano1711/programador_por_voz"
+REPO="https://github.com/victor-germano/Programador-por-voz---Jarvis"
 BRANCH="claude/voice-command-system-w3g3wa"
 DEST="$HOME/programador_por_voz"
 
