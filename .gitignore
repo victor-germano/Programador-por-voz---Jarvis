@@ -42,3 +42,6 @@ credentials.json
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Prints de divulgação, ficam só na máquina
+linkedin_prints/
