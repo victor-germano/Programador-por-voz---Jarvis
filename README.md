@@ -88,7 +88,7 @@ Suíte de 96 testes automatizados. Setup de integrações via script interativo 
 ## Instalação
 
 ```powershell
-git clone https://github.com/vgermano1711/Programador-por-voz---Jarvis
+git clone https://github.com/victor-germano/Programador-por-voz---Jarvis
 cd Programador-por-voz---Jarvis
 pip install -r requirements.txt
 set ANTHROPIC_API_KEY=sk-ant-...
