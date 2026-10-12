@@ -1,4 +1,6 @@
 # Dados gerados em runtime
+jarvis_memory.db
+*.db
 audit_log.jsonl
 history.json
 programador_por_voz.log
